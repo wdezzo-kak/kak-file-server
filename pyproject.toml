@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kak"
-version = "0.1.0"
+version = "0.2.0"
 description = "A modern file server written in Python, inspired by dufs"
 authors = [{name = "wdezzo-kak"}]
 readme = "README.md"

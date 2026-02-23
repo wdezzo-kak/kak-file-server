@@ -240,37 +240,42 @@ async def get_file_hash(file_path: Path) -> str:
 
 async def search_files(root: Path, query: str) -> List[Dict[str, Any]]:
     results = []
-    query_lower = query.lower()
     
-    async def walk_directory(path: Path, rel_path: str):
+    # If query is empty, return all files (for recursive listing)
+    if not query:
+        query_lower = ""
+    else:
+        query_lower = query.lower()
+    
+    def walk_directory(path: Path, rel_path: str):
         try:
-            async with aiofiles.os.scandir(path) as it:
-                async for entry in it:
-                    entry_path = Path(entry.path)
-                    
-                    if is_hidden(entry_path, config.hidden):
-                        continue
-                    
-                    rel = os.path.join(rel_path, entry.name)
-                    if not rel.startswith('/'):
-                        rel = '/' + rel
-                    
-                    if query_lower in entry.name.lower():
-                        stat = await _to_thread(os.stat, entry_path)
-                        results.append({
-                            "name": entry.name,
-                            "path": rel,
-                            "size": stat.st_size,
-                            "mtime": stat.st_mtime,
-                            "is_file": entry.is_file(),
-                            "is_dir": entry.is_dir(),
-                        })
-                    
-                    if entry.is_dir():
-                        await walk_directory(entry_path, rel)
+            for entry in os.scandir(path):
+                entry_path = Path(entry.path)
+                
+                if is_hidden(entry_path, config.hidden):
+                    continue
+                
+                rel = os.path.join(rel_path, entry.name)
+                if not rel.startswith('/'):
+                    rel = '/' + rel
+                
+                # Include all if query is empty, otherwise filter by name
+                if not query_lower or query_lower in entry.name.lower():
+                    stat = os.stat(entry_path)
+                    results.append({
+                        "name": entry.name,
+                        "path": rel,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                        "is_file": entry.is_file(),
+                        "is_dir": entry.is_dir(),
+                    })
+                
+                if entry.is_dir():
+                    walk_directory(entry_path, rel)
         except Exception:
             pass
     
-    await walk_directory(root, "")
+    await _to_thread(walk_directory, root, "")
     
-    return results[:1000]
+    return results[:5000]

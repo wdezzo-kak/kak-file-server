@@ -4,8 +4,45 @@ from typing import Callable, Dict, Any, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.datastructures import Headers
+from starlette.responses import Response as StarletteResponse
 
 logger = logging.getLogger("dufs")
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        response = await call_next(request)
+        
+        process_time = time.time() - start_time
+        
+        # Log the request
+        remote_addr = request.client.host if request.client else "unknown"
+        method = request.method
+        path = str(request.url.path)
+        query = str(request.url.query) if request.url.query else ""
+        full_path = f"{method} {path}"
+        if query:
+            full_path += f"?{query}"
+        
+        status = response.status_code
+        
+        # Color codes for terminal
+        if status >= 500:
+            color = "\033[91m"  # Red
+        elif status >= 400:
+            color = "\033[93m"  # Yellow
+        elif status >= 200:
+            color = "\033[92m"  # Green
+        else:
+            color = "\033[0m"   # Reset
+        
+        reset = "\033[0m"
+        
+        print(f"{remote_addr} - {full_path} {color}{status}{reset} - {process_time*1000:.1f}ms")
+        
+        return response
 
 
 class StructuredLogger:
@@ -64,5 +101,5 @@ def init_logger(format_string: str = '$remote_addr "$request" $status', log_file
     return structured_logger
 
 
-def get_logger() -> StructuredLogger:
+def get_logger() -> 'Optional[StructuredLogger]':
     return structured_logger

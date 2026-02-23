@@ -13,7 +13,7 @@ import uvicorn
 from .config import config
 from .auth import init_auth, get_auth_store, AccessPerm
 from .auth.token import init_token_manager, generate_token, verify_token
-from .middleware.logging import init_logger, get_logger
+from .middleware.logging import init_logger, get_logger, LoggingMiddleware
 from .handlers import (
     serve_file, upload_file, append_to_file, delete_path, create_directory,
     list_directory_json, list_directory_simple, list_directory_html,
@@ -25,6 +25,8 @@ from .utils import validate_path
 
 
 app = FastAPI(title="kak File Server")
+
+app.add_middleware(LoggingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -197,6 +199,53 @@ async def handle_request(request: Request, full_path: str = ""):
         query = query_params.get("q", "")
         results = await search_files(config.root, query)
         return JSONResponse({"results": results})
+    
+    if "recursive" in query_params:
+        # Return all files recursively (for sidebar tree)
+        results = await search_files(config.root, "")
+        return JSONResponse({"results": results})
+    
+    if "stats" in query_params:
+        # Return storage statistics
+        import asyncio
+        
+        # Get filesystem stats using statvfs
+        try:
+            stat = os.statvfs(str(config.root))
+            total_space = stat.f_frsize * stat.f_blocks
+            free_space = stat.f_frsize * stat.f_bavail
+            used_space = total_space - free_space
+        except Exception:
+            total_space = 0
+            free_space = 0
+            used_space = 0
+        
+        # Count files
+        file_count = 0
+        folder_count = 0
+        
+        def count_files(path: Path):
+            nonlocal file_count, folder_count
+            try:
+                for entry in os.scandir(path):
+                    if entry.is_file():
+                        file_count += 1
+                    elif entry.is_dir():
+                        folder_count += 1
+                        count_files(Path(entry.path))
+            except Exception:
+                pass
+        
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: count_files(config.root))
+        
+        return JSONResponse({
+            "total_space": total_space,
+            "free_space": free_space,
+            "used_space": used_space,
+            "file_count": file_count,
+            "folder_count": folder_count
+        })
     
     if "hash" in query_params:
         if not file_path.is_file():
@@ -563,7 +612,25 @@ async def serve_ui_index():
     return FileResponse(frontend_dir / "index.html")
 
 
+def get_local_ip():
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
 def run_server(host: str = "0.0.0.0", port: int = 8080, reload: bool = False):
+    local_ip = get_local_ip()
+    print(f"\n🚀 Server running at:")
+    print(f"   📁 Files: {config.serve_path}")
+    print(f"   🌐 http://localhost:{port}")
+    print(f"   🌐 http://{local_ip}:{port}\n")
+    
     uvicorn.run(
         "backend.server:app",
         host=host,
@@ -571,20 +638,6 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, reload: bool = False):
         reload=reload,
         log_level="info"
     )
-
-
-def get_local_ips():
-    import socket
-    ips = ['127.0.0.1']
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('10.255.255.255', 1))
-        local_ip = s.getsockname()[0]
-        if local_ip != '127.0.0.1':
-            ips.append(local_ip)
-    except Exception:
-        pass
-    return ips
 
 
 @click.command()
@@ -669,11 +722,6 @@ def main(host, port, serve_path, single_file, prefix, config_file, hidden, enabl
     
     # Ensure serve path exists
     os.makedirs(config.root, exist_ok=True)
-    
-    # Print uvicorn startup message
-    ips = get_local_ips()
-    for ip in ips:
-        click.echo(f"INFO:     Uvicorn running on http://{ip}:{port} (Press CTRL+C to quit)")
     
     # Run server
     uvicorn.run(
