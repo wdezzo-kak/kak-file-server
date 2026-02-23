@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kak"
+version = "0.1.0"
+description = "A modern file server written in Python, inspired by dufs"
+authors = [{name = "wdezzo-kak"}]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = ["file-server", "http", "static-files", "webdav"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "aiofiles>=23.0.0",
+    "python-magic>=0.4.27",
+    "chardet>=5.0.0",
+    "PyYAML>=6.0",
+    "cryptography>=41.0.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+kak = "backend.server:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["backend", "backend.auth", "backend.handlers", "backend.middleware", "backend.utils"]
+package-data = {"backend" = ["frontend/*"]}

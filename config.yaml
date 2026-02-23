@@ -1,0 +1,40 @@
+host: 0.0.0.0
+port: 8080
+serve_path: .
+prefix: ""
+
+auth:
+  allow_anonymous: true
+  users:
+    - username: admin
+      password: secret
+      access: read_write
+
+access:
+  - path: /
+    perm: read_write
+
+hidden:
+  - ".*"
+  - "*.log"
+  - "tmp/*"
+
+allow_upload: true
+allow_delete: true
+allow_search: true
+allow_archive: true
+
+render_index: false
+render_try_index: false
+render_spa: false
+
+enable_webdav: true
+
+cors: []
+
+log_format: '$remote_addr "$request" $status'
+log_file: null
+
+tls_cert: null
+tls_key: null
+token_secret: null
