@@ -6,6 +6,8 @@ A file server that supports static serving, uploading, searching, accessing cont
 
 kak is a Python implementation of [dufs](https://github.com/sigoden/dufs) - a distinctive utility file server.
 
+<img width="1315" height="625" alt="Screenshot from 2026-02-24 02-05-49" src="https://github.com/user-attachments/assets/6a939a8e-3e89-4a6d-866d-0ba63dff34b9" />
+
 ## Features
 
 - Serve static files
