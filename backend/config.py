@@ -48,6 +48,14 @@ class Config:
         
         # Token
         self.token_secret: Optional[str] = None
+        
+        # Security - Rate limiting
+        self.rate_limit: int = 60  # requests per minute
+        self.burst_limit: int = 10  # max requests in 5 seconds
+        
+        # Security - Request size limits
+        self.max_request_size: int = 100 * 1024 * 1024  # 100MB default
+        self.max_upload_size: int = 10 * 1024 * 1024 * 1024  # 10GB default
 
     def load_from_file(self, config_path: str) -> None:
         if not os.path.exists(config_path):
@@ -112,6 +120,26 @@ class Config:
             
         if 'token_secret' in data:
             self.token_secret = data['token_secret']
+        
+        # Security - Rate limiting
+        if 'rate_limit' in data:
+            self.rate_limit = int(data['rate_limit'])
+        if 'burst_limit' in data:
+            self.burst_limit = int(data['burst_limit'])
+        
+        # Security - Request size limits
+        if 'max_request_size' in data:
+            if isinstance(data['max_request_size'], str):
+                from .middleware.security import parse_size_limit
+                self.max_request_size = parse_size_limit(data['max_request_size'])
+            else:
+                self.max_request_size = int(data['max_request_size'])
+        if 'max_upload_size' in data:
+            if isinstance(data['max_upload_size'], str):
+                from .middleware.security import parse_size_limit
+                self.max_upload_size = parse_size_limit(data['max_upload_size'])
+            else:
+                self.max_upload_size = int(data['max_upload_size'])
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -139,6 +167,10 @@ class Config:
             'tls_cert': self.tls_cert,
             'tls_key': self.tls_key,
             'token_secret': self.token_secret,
+            'rate_limit': self.rate_limit,
+            'burst_limit': self.burst_limit,
+            'max_request_size': self.max_request_size,
+            'max_upload_size': self.max_upload_size,
         }
 
 

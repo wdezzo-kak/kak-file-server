@@ -11,3 +11,8 @@ build/
 
 # Project specific
 remove/
+
+# Documentation (not committed - for reference only)
+test.md
+phases.md
+*.md.bak

@@ -337,6 +337,15 @@ class FileManager {
     // View toggle
     document.getElementById('viewToggle').addEventListener('click', () => this.toggleView());
     
+    // Dark mode toggle
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    if (darkModeToggle) {
+      darkModeToggle.addEventListener('click', () => this.toggleDarkMode());
+    }
+    
+    // Check for saved dark mode preference
+    this.initDarkMode();
+    
     // Mobile search toggle
     const mobileSearchToggle = document.getElementById('mobileSearchToggle');
     const searchBox = document.querySelector('.search-box');
@@ -1042,6 +1051,27 @@ class FileManager {
     this.renderFiles();
   }
   
+  // Dark Mode
+  initDarkMode() {
+    // Check localStorage first
+    const savedTheme = localStorage.getItem('kak-theme');
+    if (savedTheme === 'dark') {
+      document.body.classList.add('dark-mode');
+    } else if (savedTheme === 'light') {
+      document.body.classList.remove('dark-mode');
+    } else {
+      // Check system preference
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark-mode');
+      }
+    }
+  }
+  
+  toggleDarkMode() {
+    const isDark = document.body.classList.toggle('dark-mode');
+    localStorage.setItem('kak-theme', isDark ? 'dark' : 'light');
+  }
+  
   toggleSort() {
     this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
     this.renderFiles();
@@ -1233,6 +1263,12 @@ class FileManager {
       case 'download':
         window.location.href = `${API_BASE}${path}`;
         break;
+      case 'copylink':
+        this.copyLink(path);
+        break;
+      case 'share':
+        await this.shareFile(path);
+        break;
       case 'rename':
         this.showRenameDialog(path);
         break;
@@ -1240,6 +1276,74 @@ class FileManager {
         await this.deleteFile(path);
         break;
     }
+  }
+  
+  copyLink(path) {
+    const link = `${window.location.origin}${path}`;
+    navigator.clipboard.writeText(link).then(() => {
+      this.showNotification('Link copied to clipboard!');
+    }).catch(() => {
+      // Fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = link;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      this.showNotification('Link copied to clipboard!');
+    });
+  }
+  
+  async shareFile(path) {
+    try {
+      const response = await fetch(`${API_BASE}/__dufs__/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: path, expires_in: 86400 })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const shareLink = data.url;
+        
+        // Copy share link
+        navigator.clipboard.writeText(shareLink).then(() => {
+          this.showNotification('Share link copied to clipboard!');
+        }).catch(() => {
+          // Fallback - show in prompt
+          prompt('Share link:', shareLink);
+        });
+      } else {
+        this.showNotification('Failed to create share link');
+      }
+    } catch (error) {
+      console.error('Share failed:', error);
+      this.showNotification('Failed to create share link');
+    }
+  }
+  
+  showNotification(message) {
+    // Simple notification - could be enhanced
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--primary);
+      color: white;
+      padding: 12px 24px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      z-index: 10000;
+      animation: slideIn 0.3s ease;
+    `;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+      notification.remove();
+    }, 3000);
   }
   
   async deleteFile(path) {
@@ -1318,8 +1422,61 @@ class FileManager {
     
     this.uploadList.innerHTML = '';
     
+    // Show upload progress container
+    const progressContainer = document.getElementById('uploadProgressContainer');
+    if (progressContainer) {
+      progressContainer.style.display = 'block';
+    }
+    
+    // Calculate total size
+    let totalSize = 0;
     for (const file of files) {
-      await this.uploadFile(file);
+      totalSize += file.size;
+    }
+    
+    let uploadedSize = 0;
+    const startTime = Date.now();
+    
+    for (const file of files) {
+      await this.uploadFile(file, (uploaded) => {
+        // Update overall progress
+        const currentTotal = uploadedSize + uploaded;
+        const percent = Math.round((currentTotal / totalSize) * 100);
+        
+        // Update progress bar
+        const progressFill = document.getElementById('uploadProgressFill');
+        if (progressFill) {
+          progressFill.style.width = percent + '%';
+        }
+        
+        // Update bytes text
+        const bytesText = document.getElementById('uploadBytes');
+        if (bytesText) {
+          bytesText.textContent = `${this.formatSize(currentTotal)} / ${this.formatSize(totalSize)}`;
+        }
+        
+        // Update percent text
+        const percentText = document.getElementById('uploadPercent');
+        if (percentText) {
+          percentText.textContent = percent + '%';
+        }
+        
+        // Calculate and display speed
+        const elapsed = (Date.now() - startTime) / 1000; // seconds
+        if (elapsed > 0) {
+          const speed = currentTotal / elapsed;
+          const speedText = document.getElementById('uploadSpeed');
+          if (speedText) {
+            speedText.textContent = this.formatSize(speed) + '/s';
+          }
+        }
+      });
+      uploadedSize += file.size;
+    }
+    
+    // Hide progress container
+    if (progressContainer) {
+      progressContainer.style.display = 'none';
     }
     
     setTimeout(() => {
@@ -1328,7 +1485,7 @@ class FileManager {
     }, 1000);
   }
   
-  async uploadFile(file) {
+  async uploadFile(file, onProgress) {
     const item = document.createElement('div');
     item.className = 'upload-item';
     item.innerHTML = `
@@ -1348,12 +1505,33 @@ class FileManager {
     const progressBar = item.querySelector('.upload-item-progress-bar');
     
     try {
-      const response = await fetch(`${API_BASE}${this.currentPath}${file.name}`, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': 'application/octet-stream'
-        }
+      // Use XMLHttpRequest for progress tracking
+      const response = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            progressBar.style.width = percent + '%';
+            if (onProgress) {
+              onProgress(e.loaded);
+            }
+          }
+        });
+        
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr);
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        });
+        
+        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+        
+        xhr.open('PUT', `${API_BASE}${this.currentPath}${file.name}`);
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.send(file);
       });
       
       if (response.ok) {

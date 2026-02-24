@@ -474,6 +474,85 @@ body {
   background: var(--surface-active);
 }
 
+/* Dark Mode Toggle */
+.icon-btn#darkModeToggle {
+  position: relative;
+}
+
+.icon-btn#darkModeToggle .sun-icon,
+.icon-btn#darkModeToggle .moon-icon {
+  position: absolute;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.icon-btn#darkModeToggle .sun-icon {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+.icon-btn#darkModeToggle .moon-icon {
+  opacity: 0;
+  transform: rotate(-90deg);
+}
+
+/* Dark mode active */
+body.dark-mode .icon-btn#darkModeToggle .sun-icon {
+  opacity: 0;
+  transform: rotate(90deg);
+}
+
+body.dark-mode .icon-btn#darkModeToggle .moon-icon {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+/* Upload Progress */
+.upload-progress-container {
+  padding: 16px;
+  background: var(--surface-hover);
+  border-radius: var(--radius);
+  margin-top: 16px;
+}
+
+.upload-progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.upload-progress-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.upload-progress-speed {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.upload-progress-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.upload-progress-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Breadcrumb */
 .breadcrumb {
   display: flex;

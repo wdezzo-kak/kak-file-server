@@ -14,6 +14,15 @@ from .config import config
 from .auth import init_auth, get_auth_store, AccessPerm
 from .auth.token import init_token_manager, generate_token, verify_token
 from .middleware.logging import init_logger, get_logger, LoggingMiddleware
+from .middleware.security import (
+    SecurityMiddleware, RequestSizeLimitMiddleware,
+    init_rate_limiter, get_rate_limiter, parse_size_limit
+)
+from .sharing import (
+    generate_presigned_url, create_share_link, verify_share_link,
+    verify_presigned_token, get_share, list_shares, delete_share
+)
+from .metrics import get_metrics, init_metrics
 from .handlers import (
     serve_file, upload_file, append_to_file, delete_path, create_directory,
     list_directory_json, list_directory_simple, list_directory_html,
@@ -27,6 +36,15 @@ from .utils import validate_path
 app = FastAPI(title="kak File Server")
 
 app.add_middleware(LoggingMiddleware)
+
+# Security middleware - add before CORS
+app.add_middleware(SecurityMiddleware)
+
+# Request size limit middleware
+app.add_middleware(
+    RequestSizeLimitMiddleware,
+    max_request_size=config.max_request_size
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +66,12 @@ async def startup():
     init_token_manager(config.token_secret)
     init_logger(config.log_format, config.log_file)
     
+    # Initialize rate limiter
+    init_rate_limiter(config.rate_limit, config.burst_limit)
+    
+    # Initialize metrics
+    init_metrics()
+    
     os.makedirs(config.root, exist_ok=True)
 
 
@@ -55,8 +79,142 @@ async def startup():
 async def health_check():
     return JSONResponse({
         "status": "ok",
-        "version": "0.1.0"
+        "version": "0.3.0"
     })
+
+
+# ==================== Share Links & Pre-signed URLs ====================
+
+@app.post("/__dufs__/share")
+async def create_share(request: Request):
+    """Create a share link with optional expiration, download limits, password."""
+    username, access = check_auth(request)
+    
+    if access != AccessPerm.READ_WRITE:
+        raise HTTPException(status_code=403, detail="Write permission required")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    
+    path = data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+    
+    # Validate path
+    file_path = validate_path(path, config.root, config.prefix)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Path not found")
+    
+    expires_in = data.get("expires_in")  # seconds
+    download_limit = data.get("download_limit")
+    password = data.get("password")
+    
+    share = create_share_link(
+        path=path,
+        expires_in=expires_in,
+        download_limit=download_limit,
+        password=password
+    )
+    
+    return JSONResponse(share)
+
+
+@app.get("/__dufs__/shares")
+async def list_all_shares(request: Request):
+    """List all active share links."""
+    username, access = check_auth(request)
+    
+    if access != AccessPerm.READ_WRITE:
+        raise HTTPException(status_code=403, detail="Write permission required")
+    
+    return JSONResponse({"shares": list_shares()})
+
+
+@app.delete("/__dufs__/share/{share_id}")
+async def remove_share(request: Request, share_id: str):
+    """Delete a share link."""
+    username, access = check_auth(request)
+    
+    if access != AccessPerm.READ_WRITE:
+        raise HTTPException(status_code=403, detail="Write permission required")
+    
+    if delete_share(share_id):
+        return JSONResponse({"status": "deleted"})
+    else:
+        raise HTTPException(status_code=404, detail="Share not found")
+
+
+@app.post("/__dufs__/presign")
+async def create_presigned(request: Request):
+    """Create a pre-signed URL for temporary access."""
+    username, access = check_auth(request)
+    
+    if access != AccessPerm.READ_WRITE:
+        raise HTTPException(status_code=403, detail="Write permission required")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    
+    path = data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+    
+    # Validate path
+    file_path = validate_path(path, config.root, config.prefix)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Path not found")
+    
+    expires_in = data.get("expires_in", 3600)  # default 1 hour
+    allow_upload = data.get("allow_upload", False)
+    
+    token, url = generate_presigned_url(
+        path=path,
+        expires_in=expires_in,
+        allow_upload=allow_upload
+    )
+    
+    return JSONResponse({
+        "url": url,
+        "token": token,
+        "expires_in": expires_in
+    })
+
+
+@app.get("/__dufs__/s/{share_id}")
+async def access_share(request: Request, share_id: str):
+    """Access a shared file via share link."""
+    # Check for password
+    password = request.query_params.get("password")
+    
+    share = verify_share_link(share_id, password)
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found or expired")
+    
+    # Get the file path
+    path = share["path"]
+    file_path = validate_path(path, config.root, config.prefix)
+    
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Serve the file
+    return await serve_file(request, file_path, path)
+
+
+# ==================== Metrics Endpoint ====================
+
+@app.get("/__dufs__/metrics")
+async def metrics_endpoint():
+    """Prometheus metrics endpoint."""
+    metrics = get_metrics()
+    return PlainTextResponse(
+        content=metrics.get_prometheus_metrics(),
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
 
 
 def check_auth(request: Request) -> Tuple[Optional[str], AccessPerm]:
@@ -663,10 +821,15 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, reload: bool = False):
 @click.option('--tls-key', help='TLS key file')
 @click.option('--token-secret', help='Secret for token generation')
 @click.option('--reload', is_flag=True, help='Enable auto-reload')
+@click.option('--rate-limit', default=60, help='Rate limit: requests per minute')
+@click.option('--burst-limit', default=10, help='Burst limit: max requests in 5 seconds')
+@click.option('--max-request-size', default='100MB', help='Max request size (e.g., 100MB, 1GB)')
+@click.option('--max-upload-size', default='10GB', help='Max upload size (e.g., 10GB, 1TB)')
 def main(host, port, serve_path, single_file, prefix, config_file, hidden, enable_all,
          allow_upload, allow_delete, allow_search, allow_archive,
          render_index, render_try_index, render_spa, cors,
-         log_format, log_file, tls_cert, tls_key, token_secret, reload):
+         log_format, log_file, tls_cert, tls_key, token_secret, reload,
+         rate_limit, burst_limit, max_request_size, max_upload_size):
     """kak - A modern file server"""
     
     # Load config file if provided
@@ -719,6 +882,15 @@ def main(host, port, serve_path, single_file, prefix, config_file, hidden, enabl
     config.tls_cert = tls_cert
     config.tls_key = tls_key
     config.token_secret = token_secret
+    
+    # Security settings
+    config.rate_limit = rate_limit
+    config.burst_limit = burst_limit
+    
+    # Parse size limits
+    from .middleware.security import parse_size_limit
+    config.max_request_size = parse_size_limit(max_request_size)
+    config.max_upload_size = parse_size_limit(max_upload_size)
     
     # Ensure serve path exists
     os.makedirs(config.root, exist_ok=True)
