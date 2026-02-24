@@ -517,8 +517,8 @@ See the LICENSE-APACHE and LICENSE-MIT files for license details.
 
 ## Acknowledgments
 
-wdezzo-kak is a Python implementation inspired by dufs, the file server originally developed by sigoden.
+wdezzo-kak is a Python implementation inspired by [dufs](https://github.com/sigoden/dufs), the file server originally developed by [sigoden](https://github.com/sigoden).
 
 The architectural concepts, feature model, and design philosophy of dufs directly influenced this project.
 
-I would like to acknowledge and thank sigoden for creating dufs, which served as the technical foundation and motivation for the development of kak.
+I would like to acknowledge and thank sigoden [contributors](https://github.com/sigoden/dufs/graphs/contributors) for creating dufs, which served as the technical foundation and motivation for the development of kak.
