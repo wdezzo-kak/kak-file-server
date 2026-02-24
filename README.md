@@ -517,8 +517,8 @@ See the LICENSE-APACHE and LICENSE-MIT files for license details.
 
 ## Acknowledgments
 
-This project is a Python port of [dufs](https://github.com/sigoden/dufs) by [sigoden](https://github.com/sigoden).
+wdezzo-kak is a Python implementation inspired by dufs, the file server originally developed by sigoden.
 
-Thank you to sigoden and all the [contributors](https://github.com/sigoden/dufs/graphs/contributors) for creating such an amazing file server!
+The architectural concepts, feature model, and design philosophy of dufs directly influenced this project.
 
-Original dufs is licensed under MIT or Apache-2.0.
+I would like to acknowledge and thank sigoden for creating dufs, which served as the technical foundation and motivation for the development of kak.
